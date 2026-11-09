@@ -1,0 +1,45 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In</title>
+    <link rel="stylesheet" href="{% static 'expensetracker/home.css' %}">
+</head>
+<body>
+
+    <div class="login-card">
+        <h2>Welcome Back</h2>
+        <p class="subtitle">Please enter your details to sign in</p>
+
+        {% if messages %}
+            <div class="alert-messages">
+                {% for message in messages %}
+                    <p>{{ message }}</p>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <form method="POST" action="">
+            {% csrf_token %}
+
+            <div class="form-group">
+                <label for="id_email">Email</label>
+                <input type="text" id="id_email" name="email" required placeholder="Enter your email">
+            </div>
+
+            <div class="form-group">
+                <label for="id_password">Password</label>
+                <input type="password" id="id_password" name="password" required placeholder="Enter your password">
+            </div>
+
+            <button type="submit" class="btn-submit">Sign In</button>
+        </form>
+        <div class="footer-text">
+            Don't have an account? <a href="{% url 'register' %}">Sign Up</a>
+        </div>
+    </div>
+
+</body>
+</html>
