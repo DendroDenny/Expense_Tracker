@@ -7,6 +7,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.test import override_settings
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+
+from .models import Expense, MonthlyBudget
 
 
 class PageTests(TestCase):
@@ -33,6 +36,7 @@ class PageTests(TestCase):
         self.assertContains(response, 'jordan@example.com')
         self.assertContains(response, 'Jordan')
         self.assertContains(response, 'Edit profile')
+        self.assertContains(response, 'id="profile-modal"')
         self.assertNotContains(response, '<details class="profile-editor" open>')
 
     def test_user_can_edit_own_profile(self):
@@ -80,6 +84,133 @@ class PageTests(TestCase):
         user.refresh_from_db()
         self.assertEqual(user.username, 'jordan')
         self.assertContains(response, 'already exists')
+        self.assertContains(response, 'id="profile-modal" data-show-on-load')
+
+    def test_user_can_create_edit_and_delete_expenses(self):
+        user = get_user_model().objects.create_user(
+            username='jordan',
+            password='test-password-123',
+        )
+        self.client.force_login(user)
+        expense_date = timezone.localdate().replace(day=9)
+        post_data = {
+            'action': 'expense',
+            'amount': '8000',
+            'category': 'food',
+            'date': expense_date.isoformat(),
+            'note': 'Lunch',
+            'month': expense_date.strftime('%Y-%m'),
+        }
+
+        response = self.client.post('/home/', post_data)
+        self.assertRedirects(response, f"/home/?month={expense_date:%Y-%m}")
+        expense = Expense.objects.get(user=user)
+        self.assertEqual(expense.amount, 8000)
+        self.assertEqual(expense.note, 'Lunch')
+
+        response = self.client.post('/home/', {
+            **post_data,
+            'expense_id': expense.pk,
+            'amount': '12000',
+            'note': 'Dinner',
+        })
+        self.assertRedirects(response, f"/home/?month={expense_date:%Y-%m}")
+        expense.refresh_from_db()
+        self.assertEqual(expense.amount, 12000)
+        self.assertEqual(expense.note, 'Dinner')
+
+        response = self.client.post('/home/', {
+            'action': 'delete_expense',
+            'expense_id': expense.pk,
+            'month': expense_date.strftime('%Y-%m'),
+        })
+        self.assertRedirects(response, f"/home/?month={expense_date:%Y-%m}")
+        self.assertFalse(Expense.objects.filter(pk=expense.pk).exists())
+
+    def test_dashboard_summarizes_expenses_and_filters_category(self):
+        user = get_user_model().objects.create_user(
+            username='jordan',
+            password='test-password-123',
+        )
+        self.client.force_login(user)
+        expense_date = timezone.localdate().replace(day=9)
+        Expense.objects.create(
+            user=user,
+            amount=8000,
+            category=Expense.Category.FOOD,
+            date=expense_date,
+            note='Lunch',
+        )
+        Expense.objects.create(
+            user=user,
+            amount=12000,
+            category=Expense.Category.TRANSPORT,
+            date=expense_date,
+            note='Taxi',
+        )
+
+        response = self.client.get('/home/', {
+            'month': expense_date.strftime('%Y-%m'),
+            'category': Expense.Category.FOOD,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['expenses']), 1)
+        self.assertEqual(response.context['total_spent'], 20000)
+        self.assertEqual(response.context['monthly_budget'].amount, 300000)
+        self.assertContains(response, 'Lunch')
+        self.assertNotContains(response, 'Taxi')
+
+    def test_monthly_budget_is_saved_per_user_and_month(self):
+        user = get_user_model().objects.create_user(
+            username='jordan',
+            password='test-password-123',
+        )
+        self.client.force_login(user)
+        target_month = timezone.localdate().replace(day=1).strftime('%Y-%m')
+
+        response = self.client.post('/home/', {
+            'action': 'budget',
+            'amount': '450000',
+            'month': target_month,
+        })
+
+        self.assertRedirects(response, f'/home/?month={target_month}')
+        self.assertEqual(
+            MonthlyBudget.objects.get(user=user).amount,
+            450000,
+        )
+
+    def test_user_cannot_edit_another_users_expense(self):
+        user_model = get_user_model()
+        owner = user_model.objects.create_user(
+            username='owner',
+            password='test-password-123',
+        )
+        other_user = user_model.objects.create_user(
+            username='other',
+            password='test-password-123',
+        )
+        expense = Expense.objects.create(
+            user=owner,
+            amount=8000,
+            category=Expense.Category.FOOD,
+            date=timezone.localdate(),
+        )
+        self.client.force_login(other_user)
+
+        response = self.client.post('/home/', {
+            'action': 'expense',
+            'expense_id': expense.pk,
+            'amount': '1',
+            'category': 'food',
+            'date': timezone.localdate().isoformat(),
+            'note': 'Changed',
+        })
+
+        self.assertEqual(response.status_code, 404)
+        expense.refresh_from_db()
+        self.assertEqual(expense.amount, 8000)
 
     def test_user_can_upload_profile_picture(self):
         user = get_user_model().objects.create_user(

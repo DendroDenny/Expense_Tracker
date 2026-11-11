@@ -4,91 +4,297 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Your Profile</title>
+    <title>Expense Tracker</title>
     <link rel="stylesheet" href="{% static 'expensetracker/home.css' %}">
 </head>
 <body class="profile-page">
-    <main class="profile-card">
-        <header class="profile-header">
-            <div>
-                <p class="eyebrow">Expense Tracker</p>
-                <h1>Your profile</h1>
+    <main class="dashboard">
+        <header class="page-header">
+            <div class="brand">
+                <span class="brand-mark" aria-hidden="true"></span>
+                <div>
+                    <p class="eyebrow">Expense Tracker</p>
+                    <h1>Keep your daily spending in view.</h1>
+                </div>
             </div>
-            <form method="post" action="{% url 'logout' %}">
-                {% csrf_token %}
-                <button class="btn-logout" type="submit">Sign out</button>
-            </form>
+            <div class="header-actions">
+                <nav class="month-nav" aria-label="Choose month">
+                    <a class="icon-button" href="?month={{ previous_month }}{% if selected_category %}&amp;category={{ selected_category }}{% endif %}" aria-label="Previous month">&lsaquo;</a>
+                    <form method="get" class="month-picker">
+                        {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
+                        <label class="sr-only" for="month-filter">Month</label>
+                        <input id="month-filter" name="month" type="month" value="{{ selected_month }}" onchange="this.form.submit()">
+                    </form>
+                    <a class="icon-button" href="?month={{ next_month }}{% if selected_category %}&amp;category={{ selected_category }}{% endif %}" aria-label="Next month">&rsaquo;</a>
+                </nav>
+                <button class="profile-trigger" type="button" data-open-dialog="profile-modal">
+                    {% if profile.image %}
+                        <img src="{{ profile.image.url }}" alt="" class="header-avatar">
+                    {% else %}
+                        <span class="header-avatar avatar-initial" aria-hidden="true">{{ request.user.username|first|upper }}</span>
+                    {% endif %}
+                    <span>{{ request.user.get_full_name|default:request.user.username }}</span>
+                </button>
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button class="btn-logout" type="submit">Sign out</button>
+                </form>
+            </div>
         </header>
 
-        <section class="profile-summary" aria-label="Profile summary">
-            {% if profile.image %}
-                <img class="profile-avatar" src="{{ profile.image.url }}" alt="Profile picture">
-            {% else %}
-                <div class="profile-avatar" aria-hidden="true">{{ request.user.username|first|upper }}</div>
-            {% endif %}
-            <div>
-                <h2>{{ request.user.get_full_name|default:request.user.username }}</h2>
-                <p>Member since {{ request.user.date_joined|date:"F Y" }}</p>
-            </div>
-        </section>
-
-        <section class="profile-details" aria-labelledby="details-heading">
-            <h2 id="details-heading">Account details</h2>
-            {% if messages %}
+        {% if messages %}
+            <div class="message-stack" role="status">
                 {% for message in messages %}
                     <p class="profile-message {{ message.tags }}">{{ message }}</p>
                 {% endfor %}
-            {% endif %}
+            </div>
+        {% endif %}
 
-            <dl class="profile-readonly">
+        <section class="summary-grid" aria-label="Monthly summary">
+            <article class="summary-card summary-primary">
+                <span class="summary-icon" aria-hidden="true">$</span>
                 <div>
-                    <dt>Username</dt>
-                    <dd>{{ request.user.username }}</dd>
+                    <p>Total spent</p>
+                    <strong>{{ total_spent|floatformat:"0g" }} MMK</strong>
                 </div>
+            </article>
+            <article class="summary-card">
+                <span class="summary-icon" aria-hidden="true">◎</span>
                 <div>
-                    <dt>Email</dt>
-                    <dd>{{ request.user.email|default:"Not provided" }}</dd>
+                    <p>Monthly budget</p>
+                    <strong>{{ monthly_budget.amount|floatformat:"0g" }} MMK</strong>
+                    <button class="text-button" type="button" data-open-dialog="budget-modal">Edit budget</button>
                 </div>
+            </article>
+            <article class="summary-card">
+                <span class="summary-icon" aria-hidden="true">◉</span>
                 <div>
-                    <dt>First name</dt>
-                    <dd>{{ request.user.first_name|default:"Not provided" }}</dd>
+                    <p>Remaining</p>
+                    <strong class="{% if remaining_budget < 0 %}over-budget{% endif %}">{{ remaining_budget|floatformat:"0g" }} MMK</strong>
                 </div>
-                <div>
-                    <dt>Last name</dt>
-                    <dd>{{ request.user.last_name|default:"Not provided" }}</dd>
-                </div>
-            </dl>
-
-            <details class="profile-editor" {% if form.errors or picture_form.errors %}open{% endif %}>
-                <summary class="btn-edit">Edit profile</summary>
-                <form method="post" action="{% url 'home' %}" enctype="multipart/form-data">
-                    {% csrf_token %}
-                    {{ form.non_field_errors }}
-                    {% for field in form %}
-                        <div class="profile-field">
-                            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-                            {{ field }}
-                            {% if field.errors %}
-                                <small class="field-error">{{ field.errors.0 }}</small>
-                            {% endif %}
-                        </div>
-                    {% endfor %}
-                    {% for field in picture_form %}
-                        <div class="profile-field">
-                            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-                            {{ field }}
-                            {% if field.errors %}
-                                <small class="field-error">{{ field.errors.0 }}</small>
-                            {% endif %}
-                        </div>
-                    {% endfor %}
-                    <div class="profile-actions">
-                        <button class="btn-save" type="submit">Save changes</button>
-                        <button class="btn-cancel" type="button" onclick="this.closest('details').open = false; this.closest('form').reset();">Cancel</button>
-                    </div>
-                </form>
-            </details>
+            </article>
         </section>
+
+        <div class="dashboard-grid">
+            <section class="panel expenses-panel" aria-labelledby="expenses-heading">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">{{ selected_month_label }}</p>
+                        <h2 id="expenses-heading">Expenses</h2>
+                    </div>
+                    <form method="get" class="filters">
+                        <input type="hidden" name="month" value="{{ selected_month }}">
+                        <label class="sr-only" for="category-filter">Filter by category</label>
+                        <select id="category-filter" name="category" onchange="this.form.submit()">
+                            <option value="">All categories</option>
+                            {% for value, label in categories %}
+                                <option value="{{ value }}" {% if selected_category == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </div>
+
+                <div class="table-wrap">
+                    <table class="expense-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Date</th>
+                                <th scope="col">Note</th>
+                                <th scope="col">Category</th>
+                                <th scope="col">Amount</th>
+                                <th scope="col">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for expense in expenses %}
+                                <tr>
+                                    <td>{{ expense.date|date:"M d" }}</td>
+                                    <td>{{ expense.note|default:"—" }}</td>
+                                    <td><span class="category-pill category-{{ expense.category }}">{{ expense.get_category_display }}</span></td>
+                                    <td class="amount-cell">{{ expense.amount|floatformat:"0g" }} MMK</td>
+                                    <td>
+                                        <div class="row-actions">
+                                            <button class="icon-button edit-expense" type="button"
+                                                aria-label="Edit {{ expense.get_category_display }} expense"
+                                                data-open-dialog="expense-modal"
+                                                data-expense-id="{{ expense.pk }}"
+                                                data-amount="{{ expense.amount }}"
+                                                data-category="{{ expense.category }}"
+                                                data-date="{{ expense.date|date:'Y-m-d' }}"
+                                                data-note="{{ expense.note }}">&#9998;</button>
+                                            <form method="post" class="inline-form">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="delete_expense">
+                                                <input type="hidden" name="expense_id" value="{{ expense.pk }}">
+                                                <input type="hidden" name="month" value="{{ selected_month }}">
+                                                <button class="icon-button delete-button" type="submit" aria-label="Delete {{ expense.get_category_display }} expense">&#128465;</button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td class="empty-state" colspan="5">No expenses for {{ selected_month_label }}{% if selected_category %} in this category{% endif %} yet.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="table-count">Showing {{ expenses|length }} of {{ month_expense_count }} expenses</p>
+            </section>
+
+            <aside class="side-column">
+                <section class="panel add-panel" aria-labelledby="add-expense-heading">
+                    <h2 id="add-expense-heading">Add expense</h2>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="expense">
+                        <input type="hidden" name="month" value="{{ selected_month }}">
+                        {% if expense_form.non_field_errors %}<div class="form-errors">{{ expense_form.non_field_errors }}</div>{% endif %}
+                        {% for field in expense_form %}
+                            <div class="profile-field">
+                                <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.name == "amount" %} (MMK){% endif %}{% if field.name == "note" %} (optional){% endif %}</label>
+                                {{ field }}
+                                {% if field.errors %}<small class="field-error">{{ field.errors.0 }}</small>{% endif %}
+                            </div>
+                        {% endfor %}
+                        <button class="btn-save full-button" type="submit">Save expense</button>
+                    </form>
+                </section>
+
+                <section class="panel category-panel" aria-labelledby="category-heading">
+                    <h2 id="category-heading">Spending by category</h2>
+                    <ul class="category-list">
+                        {% for item in category_breakdown %}
+                            <li>
+                                <span>{{ item.label }}</span>
+                                <span class="bar-track" role="img" aria-label="{{ item.label }}: {{ item.total|floatformat:'0g' }} MMK">
+                                    <span class="bar-fill" style="width: {{ item.percentage }}%"></span>
+                                </span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </section>
+            </aside>
+        </div>
     </main>
+
+    <dialog class="app-dialog" id="profile-modal" {% if profile_modal_open %}data-show-on-load{% endif %}>
+        <section class="dialog-card" aria-labelledby="profile-dialog-title">
+            <header class="dialog-heading">
+                <div>
+                    <p class="eyebrow">Account</p>
+                    <h2 id="profile-dialog-title">Edit profile</h2>
+                </div>
+                <button class="dialog-close" type="button" data-close-dialog aria-label="Close">&times;</button>
+            </header>
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="profile">
+                <input type="hidden" name="month" value="{{ selected_month }}">
+                {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+                {% for field in form %}
+                    <div class="profile-field">
+                        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.errors %}<small class="field-error">{{ field.errors.0 }}</small>{% endif %}
+                    </div>
+                {% endfor %}
+                {% for field in picture_form %}
+                    <div class="profile-field">
+                        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.errors %}<small class="field-error">{{ field.errors.0 }}</small>{% endif %}
+                    </div>
+                {% endfor %}
+                <div class="dialog-actions">
+                    <button class="btn-save" type="submit">Save profile</button>
+                    <button class="btn-cancel" type="button" data-close-dialog>Cancel</button>
+                </div>
+            </form>
+        </section>
+    </dialog>
+
+    <dialog class="app-dialog" id="budget-modal" {% if budget_modal_open %}data-show-on-load{% endif %}>
+        <section class="dialog-card" aria-labelledby="budget-dialog-title">
+            <header class="dialog-heading">
+                <div>
+                    <p class="eyebrow">{{ selected_month_label }}</p>
+                    <h2 id="budget-dialog-title">Edit monthly budget</h2>
+                </div>
+                <button class="dialog-close" type="button" data-close-dialog aria-label="Close">&times;</button>
+            </header>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="budget">
+                <input type="hidden" name="month" value="{{ selected_month }}">
+                <div class="profile-field">
+                    <label for="{{ budget_form.amount.id_for_label }}">Budget (MMK)</label>
+                    {{ budget_form.amount }}
+                    {% if budget_form.amount.errors %}<small class="field-error">{{ budget_form.amount.errors.0 }}</small>{% endif %}
+                </div>
+                <div class="dialog-actions">
+                    <button class="btn-save" type="submit">Save budget</button>
+                    <button class="btn-cancel" type="button" data-close-dialog>Cancel</button>
+                </div>
+            </form>
+        </section>
+    </dialog>
+
+    <dialog class="app-dialog" id="expense-modal" {% if expense_modal_open %}data-show-on-load{% endif %}>
+        <section class="dialog-card" aria-labelledby="expense-dialog-title">
+            <header class="dialog-heading">
+                <div>
+                    <p class="eyebrow">Expense</p>
+                    <h2 id="expense-dialog-title">Edit expense</h2>
+                </div>
+                <button class="dialog-close" type="button" data-close-dialog aria-label="Close">&times;</button>
+            </header>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="expense">
+                <input type="hidden" name="month" value="{{ selected_month }}">
+                <input type="hidden" name="expense_id" id="edit-expense-id" value="{% if expense_modal_open %}{{ request.POST.expense_id }}{% endif %}">
+                {% if edit_form.non_field_errors %}<div class="form-errors">{{ edit_form.non_field_errors }}</div>{% endif %}
+                {% for field in edit_form %}
+                    <div class="profile-field">
+                        <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.name == "amount" %} (MMK){% endif %}{% if field.name == "note" %} (optional){% endif %}</label>
+                        {{ field }}
+                        {% if field.errors %}<small class="field-error">{{ field.errors.0 }}</small>{% endif %}
+                    </div>
+                {% endfor %}
+                <div class="dialog-actions">
+                    <button class="btn-save" type="submit">Save expense</button>
+                    <button class="btn-cancel" type="button" data-close-dialog>Cancel</button>
+                </div>
+            </form>
+        </section>
+    </dialog>
+
+    <script>
+        const openDialog = (dialog) => {
+            if (dialog && !dialog.open) dialog.showModal();
+        };
+
+        document.querySelectorAll('[data-open-dialog]').forEach((button) => {
+            button.addEventListener('click', () => {
+                if (button.classList.contains('edit-expense')) {
+                    const editDialog = document.getElementById('expense-modal');
+                    document.getElementById('edit-expense-id').value = button.dataset.expenseId;
+                    editDialog.querySelector('[name="amount"]').value = button.dataset.amount;
+                    editDialog.querySelector('[name="category"]').value = button.dataset.category;
+                    editDialog.querySelector('[name="date"]').value = button.dataset.date;
+                    editDialog.querySelector('[name="note"]').value = button.dataset.note;
+                }
+                openDialog(document.getElementById(button.dataset.openDialog));
+            });
+        });
+
+        document.querySelectorAll('[data-close-dialog]').forEach((button) => {
+            button.addEventListener('click', () => button.closest('dialog').close());
+        });
+
+        document.querySelectorAll('dialog[data-show-on-load]').forEach(openDialog);
+    </script>
 </body>
 </html>
