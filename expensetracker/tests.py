@@ -8,8 +8,92 @@ from django.test import TestCase
 from django.test import override_settings
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from rest_framework.test import APITestCase
 
 from .models import Expense, MonthlyBudget
+
+
+class ExpenseAPITests(APITestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='api-user',
+            password='test-password-123',
+        )
+        self.client.force_authenticate(self.user)
+        self.expense_url = '/api/expenses/'
+
+    def test_user_can_create_list_retrieve_update_and_delete_expenses(self):
+        expense_date = timezone.localdate()
+        payload = {
+            'amount': '8000.00',
+            'category': Expense.Category.FOOD,
+            'date': expense_date.isoformat(),
+            'note': 'Lunch',
+        }
+
+        response = self.client.post(self.expense_url, payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        expense_id = response.data['id']
+        self.assertEqual(response.data['amount'], '8000.00')
+        expense = Expense.objects.get(pk=expense_id)
+        self.assertEqual(expense.user, self.user)
+
+        response = self.client.get(self.expense_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+
+        detail_url = f'{self.expense_url}{expense_id}/'
+        response = self.client.get(detail_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['note'], 'Lunch')
+
+        response = self.client.patch(
+            detail_url,
+            {'amount': '12000.00', 'note': 'Dinner'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        expense.refresh_from_db()
+        self.assertEqual(expense.amount, 12000)
+        self.assertEqual(expense.note, 'Dinner')
+
+        response = self.client.delete(detail_url)
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Expense.objects.filter(pk=expense_id).exists())
+
+    def test_expense_api_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get(self.expense_url)
+
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_user_cannot_access_another_users_expenses(self):
+        other_user = get_user_model().objects.create_user(
+            username='other-api-user',
+            password='test-password-123',
+        )
+        expense = Expense.objects.create(
+            user=other_user,
+            amount=8000,
+            category=Expense.Category.FOOD,
+            date=timezone.localdate(),
+        )
+
+        response = self.client.get(f'{self.expense_url}{expense.pk}/')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_expense_api_rejects_nonpositive_amount(self):
+        response = self.client.post(self.expense_url, {
+            'amount': '0',
+            'category': Expense.Category.FOOD,
+            'date': timezone.localdate().isoformat(),
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('amount', response.data)
+        self.assertFalse(Expense.objects.exists())
 
 
 class PageTests(TestCase):

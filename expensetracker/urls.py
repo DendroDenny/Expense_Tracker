@@ -1,4 +1,5 @@
-from django.urls import path
+from django.urls import include, path
+
 from . import views
 
 urlpatterns = [
@@ -6,4 +7,5 @@ urlpatterns = [
     path('home/', views.home, name='home'),
     path('register/', views.register, name='register'),
     path('logout/', views.logout_view, name='logout'),
+    path('api/', include('expensetracker.api_urls')),
 ]
